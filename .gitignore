@@ -1,0 +1,44 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.*
+!.env.example
+
+# API
+api/log/*
+!api/log/.keep
+api/tmp/*
+!api/tmp/.keep
+api/storage/*
+!api/storage/.keep
+api/coverage/
+api/config/master.key
+api/.bundle/
+
+# Dashboard
+dashboard/node_modules/
+dashboard/dist/
+dashboard/coverage/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+android/captures/
+*.apk
+*.aab
+
+# Terraform
+infra/terraform/**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
