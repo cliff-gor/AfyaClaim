@@ -1,0 +1,20 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i + 5 %>
+  host: <%= ENV.fetch("DB_HOST", "localhost") %>
+  port: <%= ENV.fetch("DB_PORT", 5433) %>
+  username: <%= ENV.fetch("DB_USER", "afyaclaim") %>
+  password: <%= ENV.fetch("DB_PASSWORD", "afyaclaim") %>
+
+development:
+  <<: *default
+  database: afyaclaim_development
+
+test:
+  <<: *default
+  database: afyaclaim_test
+
+production:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>
