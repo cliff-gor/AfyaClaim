@@ -1,0 +1,553 @@
+openapi: 3.0.3
+info:
+  title: AfyaClaim API
+  version: 1.0.0
+  description: |
+    Pharmacy subsidy claims platform. Pharmacies record sales and submit subsidy claims
+    from the offline-first Android POS; ops staff review them in the back office; approved
+    claims are reimbursed via M-Pesa B2C.
+
+    All amounts are KES integer cents. Authenticate with `POST /auth/login` and send
+    `Authorization: Bearer <token>`.
+  contact:
+    name: AfyaClaim maintainers
+    url: https://github.com/cliff-gor/afyaclaim
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development
+  - url: https://api.staging.afyaclaim.dev/api/v1
+    description: Staging
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Catalogue
+  - name: Sync
+    description: Offline-first sync used by the Android POS
+  - name: Claims
+  - name: Pharmacies
+  - name: Analytics
+  - name: Reimbursements
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Exchange credentials for a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, example: reviewer@afyaclaim.test }
+                password: { type: string, example: password123 }
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Too many login attempts }
+  /me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /products:
+    get:
+      tags: [Catalogue]
+      summary: Product catalogue
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Product" } }
+  /inventory:
+    get:
+      tags: [Catalogue]
+      summary: The pharmacist's own stock
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/InventoryItem" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /inventory/{id}:
+    patch:
+      tags: [Catalogue]
+      summary: Set absolute stock (optimistic locking)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inventory_item:
+                  type: object
+                  properties:
+                    quantity_on_hand: { type: integer, minimum: 0 }
+                    reorder_level: { type: integer, minimum: 0 }
+                    lock_version: { type: integer }
+      responses:
+        "200": { description: Updated }
+        "409": { description: Stale lock_version — reload and retry }
+  /sales:
+    get:
+      tags: [Catalogue]
+      summary: The pharmacy's sales
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PerPage" }]
+      responses:
+        "200": { description: Paginated sales }
+    post:
+      tags: [Catalogue]
+      summary: Record a sale (idempotent on client_uuid)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sale: { $ref: "#/components/schemas/SaleInput" }
+      responses:
+        "201": { description: Created }
+        "200": { description: Duplicate — existing sale returned }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /sync:
+    post:
+      tags: [Sync]
+      summary: Push a batch of offline records
+      description: |
+        Sales are applied before claims so a claim can reference a sale in the same batch.
+        Each record returns `accepted`, `duplicate` (already received — mark synced),
+        `conflict` (applied but server stock disagreed) or `rejected` (invalid).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sales: { type: array, items: { $ref: "#/components/schemas/SaleInput" } }
+                claims: { type: array, items: { $ref: "#/components/schemas/ClaimInput" } }
+                stock_adjustments:
+                  type: array
+                  items:
+                    type: object
+                    required: [client_uuid, product_id, delta]
+                    properties:
+                      client_uuid: { type: string, format: uuid }
+                      product_id: { type: integer }
+                      delta: { type: integer, example: -2 }
+                      reason: { type: string, enum: [sale, restock, damaged, expired, count_correction] }
+      responses:
+        "200":
+          description: Per-record results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type: { type: string, enum: [sale, claim, stock_adjustment] }
+                        client_uuid: { type: string }
+                        status: { type: string, enum: [accepted, duplicate, conflict, rejected] }
+                        server_id: { type: integer, nullable: true }
+                        message: { type: string, nullable: true }
+    get:
+      tags: [Sync]
+      summary: Pull server changes since a cursor
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Deltas and a new cursor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products: { type: array, items: { $ref: "#/components/schemas/Product" } }
+                  inventory: { type: array, items: { $ref: "#/components/schemas/InventoryItem" } }
+                  claims:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        client_uuid: { type: string }
+                        reference: { type: string }
+                        status: { $ref: "#/components/schemas/ClaimStatus" }
+                        rejection_reason: { type: string, nullable: true }
+                        updated_at: { type: string, format: date-time }
+                  cursor: { type: string, format: date-time }
+  /claims:
+    get:
+      tags: [Claims]
+      summary: Review queue
+      parameters:
+        - { name: status, in: query, schema: { type: string }, description: "Comma-separated, e.g. submitted,under_review" }
+        - { name: flagged, in: query, schema: { type: boolean } }
+        - { name: pharmacy_id, in: query, schema: { type: integer } }
+        - { name: region_id, in: query, schema: { type: integer } }
+        - { name: product_id, in: query, schema: { type: integer } }
+        - { name: q, in: query, schema: { type: string }, description: Reference or pharmacy name }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, risk] } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+      responses:
+        "200":
+          description: Paginated claims
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/ClaimRow" } }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Claims]
+      summary: Submit a claim (pharmacist)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                claim: { $ref: "#/components/schemas/ClaimInput" }
+      responses:
+        "201": { description: Created }
+        "200": { description: Duplicate }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /claims/{id}:
+    get:
+      tags: [Claims]
+      summary: Claim detail with sale, flags and verified audit trail
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ClaimDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /claims/{id}/start_review:
+    post:
+      tags: [Claims]
+      summary: submitted → under_review
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated claim }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /claims/{id}/approve:
+    post:
+      tags: [Claims]
+      summary: Approve a claim
+      description: Blocked with `blocked_by_flags` while high-severity flags are unresolved, unless `override` is true.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+                override: { type: boolean }
+      responses:
+        "200": { description: Updated claim }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /claims/{id}/reject:
+    post:
+      tags: [Claims]
+      summary: Reject a claim
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { description: Updated claim }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /claims/bulk_approve:
+    post:
+      tags: [Claims]
+      summary: Approve many clean claims (flagged ones are skipped)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids: { type: array, items: { type: integer }, maxItems: 100 }
+      responses:
+        "200": { description: Per-claim results }
+  /pharmacies:
+    get:
+      tags: [Pharmacies]
+      summary: Pharmacies ordered by risk score
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: region_id, in: query, schema: { type: integer } }
+        - { name: high_risk, in: query, schema: { type: boolean } }
+      responses:
+        "200": { description: Paginated pharmacies with claim stats }
+  /pharmacies/{id}:
+    get:
+      tags: [Pharmacies]
+      summary: Pharmacy detail, inventory, recent flags and monthly claims
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK }
+  /analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: KPI tiles
+      parameters: [{ $ref: "#/components/parameters/Days" }]
+      responses: { "200": { description: OK } }
+  /analytics/claims_by_region:
+    get:
+      tags: [Analytics]
+      summary: Claims grouped by county
+      parameters: [{ $ref: "#/components/parameters/Days" }]
+      responses: { "200": { description: OK } }
+  /analytics/claims_by_product:
+    get:
+      tags: [Analytics]
+      summary: Claims grouped by product
+      parameters: [{ $ref: "#/components/parameters/Days" }]
+      responses: { "200": { description: OK } }
+  /analytics/trend:
+    get:
+      tags: [Analytics]
+      summary: Daily claims, approvals and malaria test positivity
+      parameters: [{ $ref: "#/components/parameters/Days" }]
+      responses: { "200": { description: OK } }
+  /analytics/stockouts:
+    get:
+      tags: [Analytics]
+      summary: Pharmacies at or below reorder level for subsidised products
+      responses: { "200": { description: OK } }
+  /reimbursements:
+    get:
+      tags: [Reimbursements]
+      summary: Payout batches
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Reimbursements]
+      summary: Create payouts for all approved, unpaid claims (admin)
+      description: Writes ledger entries first, then enqueues one M-Pesa B2C payment per pharmacy.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pharmacy_ids: { type: array, items: { type: integer } }
+      responses:
+        "201": { description: Reimbursements created }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /mpesa/b2c/result:
+    post:
+      tags: [Reimbursements]
+      summary: Daraja B2C result callback
+      security: []
+      parameters:
+        - { name: secret, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Acknowledged }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer } }
+    Page: { name: page, in: query, schema: { type: integer, default: 1 } }
+    PerPage: { name: per_page, in: query, schema: { type: integer, default: 25, maximum: 100 } }
+    Days: { name: days, in: query, schema: { type: integer, default: 30, maximum: 365 } }
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: Role not allowed
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unprocessable:
+      description: Validation failed, invalid transition or blocked by flags
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: invalid_transition }
+            message: { type: string }
+            details: { type: object }
+    Meta:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        pages: { type: integer }
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [pharmacist, reviewer, admin] }
+        pharmacy:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            town: { type: string }
+    Product:
+      type: object
+      properties:
+        id: { type: integer }
+        sku: { type: string, example: RDT-MAL-01 }
+        name: { type: string, example: Malaria RDT (Pf/Pan) }
+        category: { type: string, enum: [malaria_test, antimalarial, family_planning, ors_zinc, other] }
+        unit_price_cents: { type: integer, example: 15000 }
+        subsidy_cents: { type: integer, example: 12000 }
+        subsidised: { type: boolean }
+    InventoryItem:
+      type: object
+      properties:
+        id: { type: integer }
+        product_id: { type: integer }
+        quantity_on_hand: { type: integer }
+        reorder_level: { type: integer }
+        lock_version: { type: integer }
+        low_stock: { type: boolean }
+        updated_at: { type: string, format: date-time }
+    SaleInput:
+      type: object
+      required: [client_uuid, items]
+      properties:
+        client_uuid: { type: string, format: uuid }
+        sold_at: { type: string, format: date-time }
+        total_cents: { type: integer }
+        patient:
+          type: object
+          nullable: true
+          properties:
+            pseudonym: { type: string, description: SHA-256 of phone + programme salt, computed on device }
+            age_band: { type: string, enum: ["0-4", "5-14", "15-24", "25-49", "50+"] }
+            sex: { type: string, enum: [female, male] }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id: { type: integer }
+              quantity: { type: integer, minimum: 1 }
+              unit_price_cents: { type: integer }
+    ClaimInput:
+      type: object
+      required: [client_uuid, product_id]
+      properties:
+        client_uuid: { type: string, format: uuid }
+        sale_client_uuid: { type: string, format: uuid }
+        product_id: { type: integer }
+        quantity: { type: integer, default: 1 }
+        amount_cents: { type: integer, description: Defaults to subsidy × quantity }
+        test_result: { type: string, enum: [positive, negative], nullable: true }
+        submitted_at: { type: string, format: date-time }
+    ClaimStatus:
+      type: string
+      enum: [submitted, under_review, approved, rejected, paid]
+    Flag:
+      type: object
+      properties:
+        rule: { type: string, enum: [velocity, no_matching_sale, duplicate_patient, amount_mismatch, stock_inconsistency, off_hours, positivity_outlier] }
+        severity: { type: string, enum: [low, medium, high] }
+        message: { type: string }
+        resolved: { type: boolean }
+    ClaimRow:
+      type: object
+      properties:
+        id: { type: integer }
+        reference: { type: string, example: AC-2026-000123 }
+        status: { $ref: "#/components/schemas/ClaimStatus" }
+        quantity: { type: integer }
+        amount_cents: { type: integer }
+        test_result: { type: string, nullable: true }
+        submitted_at: { type: string, format: date-time }
+        flags_count: { type: integer }
+        has_sale: { type: boolean }
+        product: { type: object }
+        pharmacy: { type: object }
+        top_flag: { $ref: "#/components/schemas/Flag" }
+    ClaimDetail:
+      allOf:
+        - $ref: "#/components/schemas/ClaimRow"
+        - type: object
+          properties:
+            sale: { type: object, nullable: true }
+            flags: { type: array, items: { $ref: "#/components/schemas/Flag" } }
+            events:
+              type: array
+              items:
+                type: object
+                properties:
+                  from_status: { type: string, nullable: true }
+                  to_status: { $ref: "#/components/schemas/ClaimStatus" }
+                  actor: { type: string }
+                  note: { type: string, nullable: true }
+                  metadata: { type: object }
+                  digest: { type: string }
+                  created_at: { type: string, format: date-time }
+            audit_intact: { type: boolean, description: Result of re-verifying the SHA-256 event chain }
