@@ -1,0 +1,33 @@
+# Copy to terraform.tfvars (git-ignored) and adjust.
+region            = "af-south-1"
+environment       = "staging"
+github_repository = "afyaclaim/afyaclaim"
+
+# The OIDC provider is account-wide. If staging and production share an AWS
+# account, set this true here and false in production.
+create_github_oidc_provider = true
+
+state_bucket_name = "afyaclaim-terraform-state-123456789012"
+lock_table_name   = "afyaclaim-terraform-locks"
+
+# TLS. Leave api_certificate_arn unset for the very first apply if the
+# certificate is not issued yet; the ALB then serves plain HTTP.
+api_certificate_arn       = "arn:aws:acm:af-south-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+dashboard_domain          = "staging-dashboard.afyaclaim.org"
+dashboard_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+extra_cors_origins        = ["http://localhost:5173"]
+
+single_nat_gateway = true
+db_instance_class  = "db.t4g.medium"
+db_multi_az        = false
+
+web_min_count = 1
+web_max_count = 3
+
+mpesa_environment = "sandbox"
+
+extra_environment = {
+  MPESA_RESULT_URL = "https://staging-api.afyaclaim.org/api/v1/mpesa/b2c/result"
+}
+
+alert_emails = ["oncall-staging@afyaclaim.org"]

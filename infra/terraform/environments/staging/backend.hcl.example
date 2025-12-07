@@ -1,0 +1,10 @@
+# Copy to backend.hcl (git-ignored) and run:
+#   terraform init -backend-config=backend.hcl
+#
+# The state bucket and lock table are created once per AWS account, outside
+# this configuration (see infra/terraform/README.md "Bootstrap").
+bucket         = "afyaclaim-terraform-state-123456789012"
+key            = "staging/terraform.tfstate"
+region         = "af-south-1"
+dynamodb_table = "afyaclaim-terraform-locks"
+encrypt        = true
