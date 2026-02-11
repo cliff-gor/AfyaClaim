@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AfyaClaim</string>
+    <string name="sync_channel_name">Background sync</string>
+    <string name="sync_notification_title">Syncing sales and claims</string>
+</resources>

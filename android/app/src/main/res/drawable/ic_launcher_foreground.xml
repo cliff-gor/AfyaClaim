@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Lime disc with a moss medical cross and a small claim tick -->
+    <path
+        android:fillColor="@color/afya_lime"
+        android:pathData="M54,30a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
+    <path
+        android:fillColor="@color/afya_moss"
+        android:pathData="M49,40h10v9h9v10h-9v9h-10v-9h-9v-10h9z" />
+</vector>
