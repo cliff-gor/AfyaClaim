@@ -1,0 +1,456 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "c5fe9b8931c1dbc3ee75db7bb2baf609",
+    "entities": [
+      {
+        "tableName": "products",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `sku` TEXT NOT NULL, `name` TEXT NOT NULL, `category` TEXT NOT NULL, `unit_price_cents` INTEGER NOT NULL, `subsidy_cents` INTEGER NOT NULL, `subsidised` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sku",
+            "columnName": "sku",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPriceCents",
+            "columnName": "unit_price_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subsidyCents",
+            "columnName": "subsidy_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subsidised",
+            "columnName": "subsidised",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "inventory",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`product_id` INTEGER NOT NULL, `server_id` INTEGER, `quantity_on_hand` INTEGER NOT NULL, `reorder_level` INTEGER NOT NULL, `updated_at` TEXT, PRIMARY KEY(`product_id`))",
+        "fields": [
+          {
+            "fieldPath": "productId",
+            "columnName": "product_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "server_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "quantityOnHand",
+            "columnName": "quantity_on_hand",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reorderLevel",
+            "columnName": "reorder_level",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "product_id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "sales",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`client_uuid` TEXT NOT NULL, `sold_at` INTEGER NOT NULL, `total_cents` INTEGER NOT NULL, `pseudonym` TEXT, `age_band` TEXT, `sex` TEXT, `sync_state` TEXT NOT NULL, `server_id` INTEGER, `sync_message` TEXT, PRIMARY KEY(`client_uuid`))",
+        "fields": [
+          {
+            "fieldPath": "clientUuid",
+            "columnName": "client_uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soldAt",
+            "columnName": "sold_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalCents",
+            "columnName": "total_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pseudonym",
+            "columnName": "pseudonym",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ageBand",
+            "columnName": "age_band",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sex",
+            "columnName": "sex",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "sync_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "server_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "syncMessage",
+            "columnName": "sync_message",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "client_uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sales_sync_state",
+            "unique": false,
+            "columnNames": [
+              "sync_state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sales_sync_state` ON `${TABLE_NAME}` (`sync_state`)"
+          },
+          {
+            "name": "index_sales_sold_at",
+            "unique": false,
+            "columnNames": [
+              "sold_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sales_sold_at` ON `${TABLE_NAME}` (`sold_at`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "sale_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sale_client_uuid` TEXT NOT NULL, `product_id` INTEGER NOT NULL, `quantity` INTEGER NOT NULL, `unit_price_cents` INTEGER NOT NULL, FOREIGN KEY(`sale_client_uuid`) REFERENCES `sales`(`client_uuid`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "saleClientUuid",
+            "columnName": "sale_client_uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "product_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPriceCents",
+            "columnName": "unit_price_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sale_items_sale_client_uuid",
+            "unique": false,
+            "columnNames": [
+              "sale_client_uuid"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sale_items_sale_client_uuid` ON `${TABLE_NAME}` (`sale_client_uuid`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sales",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sale_client_uuid"
+            ],
+            "referencedColumns": [
+              "client_uuid"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "claims",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`client_uuid` TEXT NOT NULL, `sale_client_uuid` TEXT, `product_id` INTEGER NOT NULL, `quantity` INTEGER NOT NULL, `amount_cents` INTEGER NOT NULL, `test_result` TEXT, `submitted_at` INTEGER NOT NULL, `status` TEXT NOT NULL, `reference` TEXT, `rejection_reason` TEXT, `sync_state` TEXT NOT NULL, `server_id` INTEGER, `sync_message` TEXT, `updated_at` TEXT, PRIMARY KEY(`client_uuid`))",
+        "fields": [
+          {
+            "fieldPath": "clientUuid",
+            "columnName": "client_uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "saleClientUuid",
+            "columnName": "sale_client_uuid",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "product_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountCents",
+            "columnName": "amount_cents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "testResult",
+            "columnName": "test_result",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "submittedAt",
+            "columnName": "submitted_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reference",
+            "columnName": "reference",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rejectionReason",
+            "columnName": "rejection_reason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "sync_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "server_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "syncMessage",
+            "columnName": "sync_message",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "client_uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_claims_sync_state",
+            "unique": false,
+            "columnNames": [
+              "sync_state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_claims_sync_state` ON `${TABLE_NAME}` (`sync_state`)"
+          },
+          {
+            "name": "index_claims_sale_client_uuid",
+            "unique": false,
+            "columnNames": [
+              "sale_client_uuid"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_claims_sale_client_uuid` ON `${TABLE_NAME}` (`sale_client_uuid`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "stock_adjustments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`client_uuid` TEXT NOT NULL, `product_id` INTEGER NOT NULL, `delta` INTEGER NOT NULL, `reason` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `sync_state` TEXT NOT NULL, `server_id` INTEGER, `sync_message` TEXT, PRIMARY KEY(`client_uuid`))",
+        "fields": [
+          {
+            "fieldPath": "clientUuid",
+            "columnName": "client_uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "product_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "delta",
+            "columnName": "delta",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "sync_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "server_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "syncMessage",
+            "columnName": "sync_message",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "client_uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_stock_adjustments_sync_state",
+            "unique": false,
+            "columnNames": [
+              "sync_state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_adjustments_sync_state` ON `${TABLE_NAME}` (`sync_state`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c5fe9b8931c1dbc3ee75db7bb2baf609')"
+    ]
+  }
+}
