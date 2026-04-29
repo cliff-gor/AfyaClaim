@@ -1,0 +1,278 @@
+name: Deploy
+
+# push to main      -> staging
+# workflow_dispatch -> staging or production (production is gated by the
+#                      GitHub environment's required reviewers)
+#
+# Required GitHub *environment variables* (from `terraform output github_environment_variables`):
+#   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECR_REPOSITORY, ECS_CLUSTER, ECS_WEB_SERVICE,
+#   ECS_WORKER_SERVICE, ECS_WEB_TASK_FAMILY, ECS_WORKER_TASK_FAMILY,
+#   ECS_PRIVATE_SUBNETS, ECS_SECURITY_GROUP, DASHBOARD_BUCKET, CLOUDFRONT_DISTRIBUTION_ID
+# plus VITE_API_BASE_URL (e.g. https://api.afyaclaim.org/api/v1).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "dashboard/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+      skip_migrations:
+        description: Skip the db:prepare task (emergency redeploys only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC -> AWS
+
+env:
+  TARGET_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+
+concurrency:
+  # Never run two deploys to the same environment at once, and never cancel one mid-flight.
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------------------------------
+  build-api:
+    name: Build & push API image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: deploy-${{ github.run_id }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve image reference
+        id: image
+        run: |
+          image="${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          # Tags are immutable: if this commit was already pushed (re-run), skip the build.
+          if aws ecr describe-images --repository-name "${{ vars.ECR_REPOSITORY }}" \
+               --image-ids imageTag="${{ github.sha }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.image.outputs.exists == 'false'
+
+      - name: Build and push
+        if: steps.image.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          push: true
+          tags: ${{ steps.image.outputs.image }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+          provenance: false
+
+  # -------------------------------------------------------------------------
+  deploy-api:
+    name: Migrate & roll out API
+    needs: build-api
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+    env:
+      IMAGE: ${{ needs.build-api.outputs.image }}
+      CLUSTER: ${{ vars.ECS_CLUSTER }}
+      WEB_SERVICE: ${{ vars.ECS_WEB_SERVICE }}
+      WORKER_SERVICE: ${{ vars.ECS_WORKER_SERVICE }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: deploy-${{ github.run_id }}
+
+      - name: Record currently running task definitions (rollback targets)
+        run: |
+          for svc in "$WEB_SERVICE" "$WORKER_SERVICE"; do
+            td=$(aws ecs describe-services --cluster "$CLUSTER" --services "$svc" \
+                   --query 'services[0].taskDefinition' --output text)
+            echo "PREVIOUS_${svc^^}_TD=$td" >> "$GITHUB_ENV"
+            echo "Previous $svc task definition: \`$td\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Register new task definition revisions
+        run: |
+          register() {
+            local family="$1" container="$2"
+            aws ecs describe-task-definition --task-definition "$family" \
+                --query taskDefinition --output json \
+              | jq --arg img "$IMAGE" --arg name "$container" '
+                  del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+                  | .containerDefinitions |= map(if .name == $name then .image = $img else . end)
+                ' > "td-$container.json"
+            aws ecs register-task-definition --cli-input-json "file://td-$container.json" \
+              --query taskDefinition.taskDefinitionArn --output text
+          }
+          web_td=$(register "${{ vars.ECS_WEB_TASK_FAMILY }}" web)
+          worker_td=$(register "${{ vars.ECS_WORKER_TASK_FAMILY }}" worker)
+          echo "WEB_TD=$web_td" >> "$GITHUB_ENV"
+          echo "WORKER_TD=$worker_td" >> "$GITHUB_ENV"
+          {
+            echo "New web task definition: \`$web_td\`"
+            echo "New worker task definition: \`$worker_td\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run database migrations (one-off ECS task)
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_migrations) }}
+        run: |
+          subnets=$(echo '${{ vars.ECS_PRIVATE_SUBNETS }}' | jq -R 'split(",")')
+          netcfg=$(jq -cn --argjson s "$subnets" --arg sg '${{ vars.ECS_SECURITY_GROUP }}' \
+            '{awsvpcConfiguration: {subnets: $s, securityGroups: [$sg], assignPublicIp: "DISABLED"}}')
+
+          task_arn=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$WEB_TD" \
+            --launch-type FARGATE \
+            --network-configuration "$netcfg" \
+            --overrides '{"containerOverrides":[{"name":"web","command":["./bin/rails","db:prepare"]}]}' \
+            --started-by "deploy-${GITHUB_SHA::12}" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Migration task: $task_arn"
+
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$task_arn"
+
+          # shellcheck disable=SC2016 # backticks are JMESPath literals
+          exit_code=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" \
+            --query 'tasks[0].containers[?name==`web`].exitCode | [0]' --output text)
+          reason=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" \
+            --query 'tasks[0].stoppedReason' --output text)
+
+          # Print migration output from CloudWatch Logs.
+          log_group=$(jq -r '.containerDefinitions[] | select(.name=="web") | .logConfiguration.options["awslogs-group"]' td-web.json)
+          aws logs get-log-events --log-group-name "$log_group" \
+            --log-stream-name "web/web/${task_arn##*/}" --start-from-head \
+            --query 'events[].message' --output text || true
+
+          if [ "$exit_code" != "0" ]; then
+            echo "::error::Migrations failed (exit=$exit_code, reason=$reason). Services were NOT updated."
+            exit 1
+          fi
+
+      - name: Update services
+        run: |
+          aws ecs update-service --cluster "$CLUSTER" --service "$WEB_SERVICE" \
+            --task-definition "$WEB_TD" --query 'service.deployments[0].id' --output text
+          aws ecs update-service --cluster "$CLUSTER" --service "$WORKER_SERVICE" \
+            --task-definition "$WORKER_TD" --query 'service.deployments[0].id' --output text
+
+      - name: Wait for services to stabilise
+        run: |
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$WEB_SERVICE" "$WORKER_SERVICE"
+
+          # The deployment circuit breaker may have rolled back and then stabilised
+          # on the *old* revision; treat that as a failed deploy.
+          for pair in "$WEB_SERVICE:$WEB_TD" "$WORKER_SERVICE:$WORKER_TD"; do
+            svc="${pair%%:*}"; want="${pair#*:}"
+            got=$(aws ecs describe-services --cluster "$CLUSTER" --services "$svc" \
+                    --query 'services[0].taskDefinition' --output text)
+            if [ "$got" != "$want" ]; then
+              echo "::error::$svc is running $got, expected $want (circuit breaker rollback?)"
+              exit 1
+            fi
+          done
+          echo "API deployed: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rollback hint
+        if: failure()
+        run: |
+          {
+            echo "### Deploy failed"
+            echo "To roll back manually (see docs/runbook.md#rollback):"
+            echo '```'
+            echo "aws ecs update-service --cluster $CLUSTER --service $WEB_SERVICE --task-definition ${PREVIOUS_WEB_TD:-<previous>}"
+            echo "aws ecs update-service --cluster $CLUSTER --service $WORKER_SERVICE --task-definition ${PREVIOUS_WORKER_TD:-<previous>}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------------
+  deploy-dashboard:
+    name: Build & publish dashboard
+    needs: deploy-api # ship the UI only once the API it talks to is live
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build
+        run: |
+          npm ci
+          npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_APP_ENV: ${{ env.TARGET_ENV }}
+          VITE_GIT_SHA: ${{ github.sha }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: deploy-dashboard-${{ github.run_id }}
+
+      - name: Sync to S3
+        run: |
+          bucket="s3://${{ vars.DASHBOARD_BUCKET }}"
+          # 1. Content-hashed assets first, cached forever. Old assets are kept so
+          #    users with an open tab can still lazy-load the chunks they reference.
+          if [ -d dist/assets ]; then
+            aws s3 sync dist/assets "$bucket/assets" \
+              --cache-control "public, max-age=31536000, immutable"
+          fi
+          # 2. Everything else (index.html, favicon...) must revalidate.
+          aws s3 sync dist "$bucket" --delete --exclude "assets/*" \
+            --cache-control "no-cache"
+
+      - name: Invalidate CloudFront
+        run: |
+          id=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*" --query Invalidation.Id --output text)
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" --id "$id"
+          echo "Dashboard published (invalidation $id)" >> "$GITHUB_STEP_SUMMARY"
