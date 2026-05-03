@@ -1,0 +1,36 @@
+# Copy to terraform.tfvars (git-ignored) and adjust.
+region            = "af-south-1"
+environment       = "production"
+github_repository = "afyaclaim/afyaclaim"
+
+# true if production lives in its own AWS account (recommended);
+# false if it shares an account with staging, which already creates it.
+create_github_oidc_provider = true
+
+state_bucket_name = "afyaclaim-terraform-state-210987654321"
+lock_table_name   = "afyaclaim-terraform-locks"
+
+api_certificate_arn       = "arn:aws:acm:af-south-1:210987654321:certificate/00000000-0000-0000-0000-000000000000"
+dashboard_domain          = "dashboard.afyaclaim.org"
+dashboard_certificate_arn = "arn:aws:acm:us-east-1:210987654321:certificate/00000000-0000-0000-0000-000000000000"
+
+vpc_cidr           = "10.30.0.0/16"
+single_nat_gateway = false # one NAT per AZ
+
+db_instance_class           = "db.m7g.large"
+db_multi_az                 = true
+db_allocated_storage_gb     = 50
+db_max_allocated_storage_gb = 200
+db_deletion_protection      = true
+
+web_min_count = 2
+web_max_count = 6
+
+# Switch to "production" only after Daraja go-live approval.
+mpesa_environment = "production"
+
+extra_environment = {
+  MPESA_RESULT_URL  = "https://api.afyaclaim.org/api/v1/mpesa/b2c/result"
+}
+
+alert_emails = ["oncall@afyaclaim.org", "ops-leads@afyaclaim.org"]

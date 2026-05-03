@@ -1,0 +1,9 @@
+# Copy to backend.hcl (git-ignored) and run:
+#   terraform init -backend-config=backend.hcl
+#
+# Use a separate AWS account (recommended) or at least a separate state key.
+bucket         = "afyaclaim-terraform-state-210987654321"
+key            = "production/terraform.tfstate"
+region         = "af-south-1"
+dynamodb_table = "afyaclaim-terraform-locks"
+encrypt        = true
