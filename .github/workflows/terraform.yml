@@ -1,0 +1,171 @@
+name: Terraform
+
+# fmt + validate run on every PR touching infra/. `plan` runs only for
+# branches in this repository (fork PRs cannot mint OIDC tokens) and only when
+# the repository variables below are configured:
+#   TF_PLAN_ROLE_ARN_STAGING / TF_PLAN_ROLE_ARN_PRODUCTION  (terraform output plan_role_arn)
+#   TF_BACKEND_STAGING / TF_BACKEND_PRODUCTION              (contents of backend.hcl)
+#   TF_VARS_STAGING / TF_VARS_PRODUCTION                    (contents of terraform.tfvars, no secrets)
+# Applies are run by an operator from a workstation; see infra/terraform/README.md.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VERSION: "1.16.5"
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive -diff infra/terraform
+
+  validate:
+    name: validate (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, production]
+    defaults:
+      run:
+        working-directory: infra/terraform/environments/${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  plan:
+    name: plan (${{ matrix.environment }})
+    needs: [fmt, validate]
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: staging
+            role: TF_PLAN_ROLE_ARN_STAGING
+            backend: TF_BACKEND_STAGING
+            tfvars: TF_VARS_STAGING
+          - environment: production
+            role: TF_PLAN_ROLE_ARN_PRODUCTION
+            backend: TF_BACKEND_PRODUCTION
+            tfvars: TF_VARS_PRODUCTION
+    defaults:
+      run:
+        working-directory: infra/terraform/environments/${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "${{ vars[matrix.role] }}" ]; then
+            echo "Plan role for ${{ matrix.environment }} not configured; skipping plan." >> "$GITHUB_STEP_SUMMARY"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (read-only plan role)
+        if: steps.cfg.outputs.enabled == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars[matrix.role] }}
+          aws-region: af-south-1
+          role-session-name: tf-plan-${{ github.run_id }}
+
+      - name: Write backend and tfvars
+        if: steps.cfg.outputs.enabled == 'true'
+        env:
+          BACKEND: ${{ vars[matrix.backend] }}
+          TFVARS: ${{ vars[matrix.tfvars] }}
+        run: |
+          printf '%s\n' "$BACKEND" > backend.hcl
+          printf '%s\n' "$TFVARS" > terraform.tfvars
+
+      - name: terraform init
+        if: steps.cfg.outputs.enabled == 'true'
+        run: terraform init -backend-config=backend.hcl
+
+      - name: terraform plan
+        id: plan
+        if: steps.cfg.outputs.enabled == 'true'
+        run: |
+          set +e
+          terraform plan -lock-timeout=120s -no-color -out=tfplan > plan.txt 2>&1
+          code=$?
+          set -e
+          cat plan.txt
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Comment plan on PR
+        if: always() && steps.cfg.outputs.enabled == 'true' && steps.plan.outputs.exitcode != ''
+        uses: actions/github-script@v7
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          PLAN_DIR: infra/terraform/environments/${{ matrix.environment }}
+          EXIT_CODE: ${{ steps.plan.outputs.exitcode }}
+        with:
+          script: |
+            const fs = require('fs');
+            const env = process.env.ENVIRONMENT;
+            let plan = fs.readFileSync(`${process.env.PLAN_DIR}/plan.txt`, 'utf8');
+            const summary = (plan.match(/Plan: .*|No changes\..*/) || ['(see logs)'])[0];
+            const max = 60000;
+            if (plan.length > max) plan = '... (truncated, see workflow logs)\n' + plan.slice(-max);
+            const marker = `<!-- terraform-plan-${env} -->`;
+            const status = process.env.EXIT_CODE === '0' ? 'succeeded' : 'FAILED';
+            const body = `${marker}\n### Terraform plan: \`${env}\` ${status}\n**${summary}**\n\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find(c => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
