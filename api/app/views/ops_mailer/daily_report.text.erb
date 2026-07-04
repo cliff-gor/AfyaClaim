@@ -1,0 +1,13 @@
+AfyaClaim — <%= @date.to_fs(:long) %>
+
+Claims submitted:   <%= @summary[:claims_in_period] %> (KES <%= number_with_delimiter(@summary[:claims_value_cents] / 100) %>)
+Approved:           <%= @summary[:approved_today] %>
+Rejected:           <%= @summary[:rejected_today] %>
+Flag rate:          <%= (@summary[:flag_rate] * 100).round(1) %>%
+Awaiting payout:    KES <%= number_with_delimiter(@summary[:awaiting_payout_cents] / 100) %>
+Stock-outs:         <%= @summary[:stockouts] %>
+
+By region
+<% @by_region.each do |r| -%>
+  <%= r[:region].ljust(18) %> <%= r[:claims].to_s.rjust(5) %> claims  <%= r[:flagged] %> flagged
+<% end -%>
