@@ -1,0 +1,20 @@
+# Times are Africa/Nairobi (EAT)
+production: &schedule
+  fraud_scan:
+    class: FraudScanJob
+    schedule: every day at 1am
+  nightly_reconciliation:
+    class: NightlyReconciliationJob
+    schedule: every day at 2am
+  daily_report:
+    class: DailyReportJob
+    schedule: every day at 6am
+  stockout_alert:
+    class: StockoutAlertJob
+    schedule: every hour
+  clear_finished_jobs:
+    command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
+    schedule: every hour at minute 12
+
+development:
+  <<: *schedule
