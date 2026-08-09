@@ -1,0 +1,84 @@
+version: 2
+
+updates:
+  - package-ecosystem: bundler
+    directory: /api
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Nairobi
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "api"]
+    commit-message:
+      prefix: "chore(deps-api)"
+    groups:
+      rails:
+        patterns: ["rails", "action*", "active*", "railties", "solid_*"]
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Nairobi
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "dashboard"]
+    commit-message:
+      prefix: "chore(deps-dashboard)"
+    groups:
+      vue:
+        patterns: ["vue", "vue-*", "@vue/*", "pinia", "vite", "@vitejs/*", "vitest", "@vitest/*"]
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Nairobi
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "android"]
+    commit-message:
+      prefix: "chore(deps-android)"
+    groups:
+      androidx:
+        patterns: ["androidx.*"]
+      kotlin:
+        patterns: ["org.jetbrains.kotlin*", "com.google.devtools.ksp*"]
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: terraform
+    directories:
+      - /infra/terraform/environments/staging
+      - /infra/terraform/environments/production
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "infra"]
+    commit-message:
+      prefix: "chore(deps-infra)"
+
+  - package-ecosystem: docker
+    directory: /api
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "api"]
+    commit-message:
+      prefix: "chore(deps-docker)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "chore(deps-ci)"
+    groups:
+      actions:
+        patterns: ["*"]

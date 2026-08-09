@@ -1,0 +1,67 @@
+name: Bug report
+description: Something is broken in the API, dashboard, Android POS or infrastructure.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never paste patient data, phone numbers, M-Pesa receipts, tokens or secrets** into an issue.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - API (Rails)
+        - Dashboard (Vue)
+        - Android POS
+        - Offline sync
+        - M-Pesa payouts / ledger
+        - Infrastructure / CI
+        - Docs
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local development
+        - Staging
+        - Production
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect to see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Log in as a reviewer
+        2. Open the review queue
+        3. Press `a` on a flagged claim
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: reference
+    attributes:
+      label: Claim / request reference
+      description: A claim reference (AC-2026-000123), request ID or sync batch time, if you have one.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact anything sensitive.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Commit SHA, app version name (Android) or the dashboard footer build.

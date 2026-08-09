@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement for pharmacists, reviewers, admins or programme managers.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who is this for?
+      multiple: true
+      options:
+        - Pharmacist (Android POS)
+        - Reviewer (dashboard)
+        - Admin (payouts, pharmacies)
+        - Programme manager (analytics)
+        - Contributors / developers
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or slow today? Real examples help most.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints checked
+      options:
+        - label: Works offline-first on the Android POS (or does not need to)
+        - label: Does not add patient-identifiable data on the server
+        - label: Fits the spec in docs/SPEC.md, or I explain why it should change

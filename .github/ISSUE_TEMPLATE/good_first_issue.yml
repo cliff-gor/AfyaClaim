@@ -1,0 +1,57 @@
+name: Good first issue (maintainers)
+description: A small, well-scoped task for a first-time contributor.
+title: "[Good first issue]: "
+labels: ["good first issue", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write this so someone new to the codebase can finish it in an afternoon. Link to files, not concepts.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - api
+        - dashboard
+        - android
+        - infra
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this matters, in two or three sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: What to do
+      description: Concrete steps, with file paths.
+      placeholder: |
+        - In `api/app/rules/off_hours_rule.rb` ...
+        - Add a spec in `api/spec/rules/off_hours_rule_spec.rb` ...
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      placeholder: |
+        - [ ] Tests added and passing in CI
+        - [ ] Docs updated if behaviour changed
+    validations:
+      required: true
+  - type: textarea
+    id: pointers
+    attributes:
+      label: Helpful pointers
+      description: Similar code to copy, how to run it locally, who to ask.
+  - type: input
+    id: mentor
+    attributes:
+      label: Mentor
+      description: Maintainer handle who will review and answer questions.
