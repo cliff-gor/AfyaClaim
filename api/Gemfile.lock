@@ -157,7 +157,7 @@ GEM
     json-schema (6.2.1)
       addressable (~> 2.8)
       bigdecimal (>= 3.1, < 5)
-    jwt (2.10.3)
+    jwt (3.3.0)
       base64
     language_server-protocol (3.17.0.6)
     lint_roller (1.1.0)
@@ -403,7 +403,7 @@ DEPENDENCIES
   factory_bot_rails
   faker
   faraday (~> 2.12)
-  jwt (~> 2.9)
+  jwt (~> 3.3)
   lograge
   ostruct
   pagy (~> 9.3)
