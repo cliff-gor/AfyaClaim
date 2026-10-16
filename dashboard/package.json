@@ -29,8 +29,8 @@
     "jsdom": "^29.1.1",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.71.2",
-    "vite": "^6.3.5",
-    "vitest": "^3.2.4",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4",
     "vue-tsc": "^2.2.8"
   }
 }
