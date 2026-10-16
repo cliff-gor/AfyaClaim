@@ -37,8 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - name: terraform fmt -check
@@ -56,8 +56,8 @@ jobs:
       run:
         working-directory: infra/terraform/environments/${{ matrix.environment }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - run: terraform init -backend=false
@@ -91,7 +91,7 @@ jobs:
       run:
         working-directory: infra/terraform/environments/${{ matrix.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check configuration
         id: cfg
@@ -103,7 +103,7 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         if: steps.cfg.outputs.enabled == 'true'
         with:
           terraform_version: ${{ env.TF_VERSION }}
@@ -111,7 +111,7 @@ jobs:
 
       - name: Configure AWS credentials (read-only plan role)
         if: steps.cfg.outputs.enabled == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars[matrix.role] }}
           aws-region: af-south-1
@@ -144,7 +144,7 @@ jobs:
 
       - name: Comment plan on PR
         if: always() && steps.cfg.outputs.enabled == 'true' && steps.plan.outputs.exitcode != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ENVIRONMENT: ${{ matrix.environment }}
           PLAN_DIR: infra/terraform/environments/${{ matrix.environment }}
