@@ -10,7 +10,7 @@ gem "rack-attack"
 gem "ostruct"
 gem "solid_queue"
 gem "lograge"
-gem "pagy", "~> 9.3"
+gem "pagy", "~> 43.8"
 gem "faraday", "~> 2.12"
 gem "aws-sdk-s3", require: false
 gem "tzinfo-data", platforms: %i[ windows jruby ]
