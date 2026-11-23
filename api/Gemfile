@@ -11,7 +11,7 @@ gem "ostruct"
 gem "solid_queue"
 gem "lograge"
 gem "pagy", "~> 9.3"
-gem "faraday", "~> 2.12"
+gem "faraday", "~> 2.15"
 gem "aws-sdk-s3", require: false
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
